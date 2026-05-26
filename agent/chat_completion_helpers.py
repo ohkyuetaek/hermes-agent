@@ -148,6 +148,33 @@ def _env_float(name: str, default: float) -> float:
         return default
 
 
+def _stale_timeout_payload(api_kwargs: dict) -> list[Any]:
+    """Return request content used to estimate non-stream stale timeout.
+
+    Chat Completions requests carry conversation context in ``messages``.
+    Responses API requests (including the ChatGPT Codex backend) carry it in
+    ``input`` plus optional ``instructions``.  Use the actual payload shape so
+    large Codex sessions do not look like zero-token requests and get killed at
+    the default stale timeout.
+    """
+    messages = api_kwargs.get("messages")
+    if messages:
+        return messages
+
+    payload: list[Any] = []
+    instructions = api_kwargs.get("instructions")
+    if instructions:
+        payload.append({"role": "system", "content": instructions})
+
+    responses_input = api_kwargs.get("input")
+    if isinstance(responses_input, list):
+        payload.extend(responses_input)
+    elif responses_input:
+        payload.append(responses_input)
+
+    return payload
+
+
 def interruptible_api_call(agent, api_kwargs: dict):
     """
     Run the API call in a background thread so the main conversation loop
@@ -272,7 +299,8 @@ def interruptible_api_call(agent, api_kwargs: dict):
     # httpx timeout (default 1800s) with zero feedback.  The stale
     # detector kills the connection early so the main retry loop can
     # apply richer recovery (credential rotation, provider fallback).
-    _stale_timeout = agent._compute_non_stream_stale_timeout(api_kwargs)
+    _stale_payload = _stale_timeout_payload(api_kwargs)
+    _stale_timeout = agent._compute_non_stream_stale_timeout(_stale_payload)
 
     # ── Codex Responses stream watchdogs ────────────────────────────────
     # The chatgpt.com/backend-api/codex endpoint has an intermittent failure
@@ -478,7 +506,7 @@ def interruptible_api_call(agent, api_kwargs: dict):
         # Stale-call detector: kill the connection if no response
         # arrives within the configured timeout.
         if _elapsed > _stale_timeout:
-            _est_ctx = estimate_request_context_tokens(api_kwargs)
+            _est_ctx = estimate_request_context_tokens(_stale_payload)
             _silent_hint: Optional[str] = None
             _hint_fn = getattr(agent, "_codex_silent_hang_hint", None)
             if callable(_hint_fn):

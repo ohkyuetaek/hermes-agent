@@ -113,6 +113,43 @@ def test_stale_non_stream_close_is_single_owner(monkeypatch):
     assert request_client.close_calls == 1
 
 
+def test_codex_responses_input_is_used_for_stale_timeout_context(monkeypatch):
+    request_client = FakeRequestClient(lambda **kwargs: {"ok": True})
+    factory = OpenAIFactory([request_client])
+    monkeypatch.setattr(run_agent, "OpenAI", factory)
+
+    agent = _build_agent()
+    setattr(agent, "api_mode", "codex_responses")
+    captured_payloads = []
+
+    def compute_timeout(payload):
+        captured_payloads.append(payload)
+        return 999.0
+
+    setattr(agent, "_compute_non_stream_stale_timeout", compute_timeout)
+    setattr(agent, "_run_codex_stream", lambda api_kwargs, **kwargs: {"ok": True})
+
+    codex_input = [
+        {"role": "user", "content": [{"type": "input_text", "text": "large context"}]}
+    ]
+
+    result = agent._interruptible_api_call(
+        {
+            "model": getattr(agent, "model"),
+            "instructions": "system prompt",
+            "input": codex_input,
+        }
+    )
+
+    assert result == {"ok": True}
+    assert captured_payloads == [
+        [
+            {"role": "system", "content": "system prompt"},
+            *codex_input,
+        ]
+    ]
+
+
 def test_closed_shared_client_is_recreated_before_request(monkeypatch):
     stale_shared = FakeSharedClient(lambda **kwargs: (_ for _ in ()).throw(AssertionError("stale shared client used")))
     stale_shared._client.is_closed = True
