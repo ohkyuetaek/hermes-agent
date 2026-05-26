@@ -526,7 +526,7 @@ def telegram_bot_commands() -> list[tuple[str, str]]:
     """
     overrides = _resolve_config_gates()
     result: list[tuple[str, str]] = []
-    menu_excluded = {"debug", "insights", "platform", "update"}
+    menu_excluded = {"insights", "platform", "reload-skills", "usage"}
     for cmd in COMMAND_REGISTRY:
         if not _is_gateway_available(cmd, overrides):
             continue
@@ -1113,21 +1113,38 @@ def slack_native_slashes() -> list[tuple[str, str, str]]:
         entries.append((slack_name, desc[:140], hint[:100]))
         seen.add(slack_name)
 
-    # Preserve compact high-value aliases before the generic canonical pass so
-    # Slack's 50-command cap cannot silently evict them when new gateway
-    # commands are added.
+    # Preserve compact high-value aliases and operational commands before the
+    # generic canonical pass so Slack's 50-command cap cannot silently evict
+    # names that Telegram exposes in its capped menu.
     priority_aliases = {"btw", "bg", "q", "reset"}
+    priority_commands = {
+        "debug",
+        "restart",
+        "update",
+        "verbose",
+        "commands",
+        "help",
+        "new",
+        "stop",
+        "approve",
+        "deny",
+        "queue",
+        "steer",
+        "background",
+    }
     for cmd in COMMAND_REGISTRY:
         if not _is_gateway_available(cmd, overrides):
             continue
         if cmd.category == "Workflow" or cmd.name in menu_excluded:
             continue
+        if cmd.name in priority_commands:
+            _add(cmd.name, cmd.description, cmd.args_hint or "")
         for alias in cmd.aliases:
             if alias in priority_aliases:
                 _add(alias, f"Alias for /{cmd.name} — {cmd.description}", cmd.args_hint or "")
 
     # First pass: canonical names (so they win slots after the reserved aliases
-    # above if we hit the cap).
+    # and operational commands above if we hit the cap).
     for cmd in COMMAND_REGISTRY:
         if not _is_gateway_available(cmd, overrides):
             continue
