@@ -2402,6 +2402,12 @@ def run_conversation(
                 error_type = type(api_error).__name__
                 error_msg = str(api_error).lower()
                 _error_summary = agent._summarize_api_error(api_error)
+                
+                # Check for Codex TypeError ('NoneType' object is not iterable) 
+                # This happens when the proxy returns an empty/broken response payload that our client can't iterate over.
+                if error_type == "TypeError" and "iterable" in error_msg and "nonetype" in error_msg:
+                    _error_summary = "Codex API connection or parsing failure: Received empty (None) response. Browser session might be stale or blocked."
+                
                 logger.warning(
                     "API call failed (attempt %s/%s) error_type=%s %s summary=%s",
                     retry_count,
