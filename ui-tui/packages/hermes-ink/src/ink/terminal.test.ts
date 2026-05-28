@@ -19,8 +19,12 @@ describe('extended keyboard modes', () => {
     expect(shouldEnableKittyKeyboard({ TMUX: '/tmp/tmux-501/default,123,0' }, 'iTerm.app')).toBe(false)
   })
 
-  it('still enables tmux-native modifyOtherKeys for app-level shortcuts inside tmux', () => {
-    expect(shouldEnableModifyOtherKeys('iTerm.app')).toBe(true)
+  it('does not push modifyOtherKeys from inside tmux because it can break the prefix byte path', () => {
+    expect(shouldEnableModifyOtherKeys('iTerm.app', { TMUX: '/tmp/tmux-501/default,123,0' })).toBe(false)
+  })
+
+  it('enables modifyOtherKeys directly in allowlisted non-tmux terminals', () => {
+    expect(shouldEnableModifyOtherKeys('iTerm.app', {})).toBe(true)
   })
 
   it('enables Kitty keyboard mode directly in allowlisted non-tmux terminals', () => {

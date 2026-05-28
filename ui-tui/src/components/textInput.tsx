@@ -38,6 +38,7 @@ const FRAME_BATCH_MS = 16
 const IME_SPACE_DELAY_MS = 32
 const MULTI_CLICK_MS = 500
 const HANGUL_RE = /[\u1100-\u11ff\u3130-\u318f\uac00-\ud7af]/
+const ENV_ON_RE = /^(?:1|true|yes|on)$/i
 
 const invert = (s: string) => INV + s + INV_OFF
 const dim = (s: string) => DIM + s + DIM_OFF
@@ -145,8 +146,19 @@ export function shouldDeferImeSpace(
   value: string,
   cursor: number,
   text: string,
-  range?: { end: number; start: number } | null
+  range?: { end: number; start: number } | null,
+  env: NodeJS.ProcessEnv = process.env
 ): boolean {
+  // The pending-space reorder path is intentionally opt-in. It was added to
+  // handle a suspected IME ordering case (`지금` + Space + late `도` →
+  // `지금도 `), but in real Korean typing it is indistinguishable from an
+  // ordinary fast word separator (`지금도` + Space + `여`), which corrupts the
+  // submitted text by moving the word space after the first syllable of the
+  // next word. Keep the safer native terminal/IME ordering by default.
+  if (!ENV_ON_RE.test(String(env.HERMES_TUI_EXPERIMENTAL_IME_SPACE_REORDER ?? '').trim())) {
+    return false
+  }
+
   if (text !== ' ' || range || cursor !== value.length || cursor <= 0) {
     return false
   }

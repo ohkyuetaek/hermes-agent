@@ -35,15 +35,26 @@ describe('applyPrintableInsert', () => {
 })
 
 describe('Korean IME pending-space ordering', () => {
-  it('defers a plain space at the end of Hangul text', () => {
-    expect(shouldDeferImeSpace('지금', '지금'.length, ' ', null)).toBe(true)
+  it('keeps ordinary Korean word separators native by default', () => {
+    expect(shouldDeferImeSpace('지금', '지금'.length, ' ', null)).toBe(false)
+    expect(shouldDeferImeSpace('지금도', '지금도'.length, ' ', null)).toBe(false)
+  })
+
+  it('only defers Hangul spaces when the experimental reorder path is explicitly enabled', () => {
+    expect(
+      shouldDeferImeSpace('지금', '지금'.length, ' ', null, {
+        HERMES_TUI_EXPERIMENTAL_IME_SPACE_REORDER: '1'
+      } as NodeJS.ProcessEnv)
+    ).toBe(true)
   })
 
   it('does not defer ASCII spaces away from Hangul composition edges', () => {
-    expect(shouldDeferImeSpace('hello', 5, ' ', null)).toBe(false)
-    expect(shouldDeferImeSpace('지금', 1, ' ', null)).toBe(false)
-    expect(shouldDeferImeSpace('지금', '지금'.length, 'x', null)).toBe(false)
-    expect(shouldDeferImeSpace('지금', '지금'.length, ' ', { end: 1, start: 0 })).toBe(false)
+    const env = { HERMES_TUI_EXPERIMENTAL_IME_SPACE_REORDER: '1' } as NodeJS.ProcessEnv
+
+    expect(shouldDeferImeSpace('hello', 5, ' ', null, env)).toBe(false)
+    expect(shouldDeferImeSpace('지금', 1, ' ', null, env)).toBe(false)
+    expect(shouldDeferImeSpace('지금', '지금'.length, 'x', null, env)).toBe(false)
+    expect(shouldDeferImeSpace('지금', '지금'.length, ' ', { end: 1, start: 0 }, env)).toBe(false)
   })
 
   it('reorders a deferred space after the late Korean syllable that committed it', () => {
