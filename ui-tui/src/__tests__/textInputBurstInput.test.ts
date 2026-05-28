@@ -4,6 +4,7 @@ import {
   applyLeadingImeSpaceBeforeText,
   applyPendingImeSpaceAfterText,
   applyPrintableInsert,
+  imeSpaceDelayMs,
   shouldBatchPrintableBurstCommit,
   shouldDeferImeSpace,
   shouldRouteMultiCharInputAsPaste
@@ -36,6 +37,13 @@ describe('applyPrintableInsert', () => {
 })
 
 describe('Korean IME pending-space ordering', () => {
+  it('uses a slightly longer default delay for macOS/tmux IME commit jitter', () => {
+    expect(imeSpaceDelayMs()).toBe(96)
+    expect(imeSpaceDelayMs({ HERMES_TUI_IME_SPACE_DELAY_MS: '160' } as NodeJS.ProcessEnv)).toBe(160)
+    expect(imeSpaceDelayMs({ HERMES_TUI_IME_SPACE_DELAY_MS: '8' } as NodeJS.ProcessEnv)).toBe(96)
+    expect(imeSpaceDelayMs({ HERMES_TUI_IME_SPACE_DELAY_MS: '800' } as NodeJS.ProcessEnv)).toBe(500)
+  })
+
   it('briefly defers Hangul-following Space by default to catch same-burst late IME commits', () => {
     expect(shouldDeferImeSpace('지금', '지금'.length, ' ', null)).toBe(true)
     expect(shouldDeferImeSpace('지금도', '지금도'.length, ' ', null)).toBe(true)
