@@ -35,7 +35,7 @@ const FWD_DEL_RE = new RegExp(`${ESC}\\[3(?:[~$^]|;)`)
 const PRINTABLE = /^[ -~\u00a0-\uffff]+$/
 const BRACKET_PASTE = new RegExp(`${ESC}?\\[20[01]~`, 'g')
 const FRAME_BATCH_MS = 16
-const IME_SPACE_DELAY_MS = 32
+const IME_SPACE_DELAY_MS = 16
 const MULTI_CLICK_MS = 500
 const HANGUL_RE = /[\u1100-\u11ff\u3130-\u318f\uac00-\ud7af]/
 const ENV_ON_RE = /^(?:1|true|yes|on)$/i
@@ -149,13 +149,13 @@ export function shouldDeferImeSpace(
   range?: { end: number; start: number } | null,
   env: NodeJS.ProcessEnv = process.env
 ): boolean {
-  // The pending-space reorder path is intentionally opt-in. It was added to
-  // handle a suspected IME ordering case (`지금` + Space + late `도` →
-  // `지금도 `), but in real Korean typing it is indistinguishable from an
-  // ordinary fast word separator (`지금도` + Space + `여`), which corrupts the
-  // submitted text by moving the word space after the first syllable of the
-  // next word. Keep the safer native terminal/IME ordering by default.
-  if (!ENV_ON_RE.test(String(env.HERMES_TUI_EXPERIMENTAL_IME_SPACE_REORDER ?? '').trim())) {
+  // Korean IMEs can occasionally deliver Space before the final Hangul commit
+  // that the Space key just accepted (`지금` + Space + late `도` should become
+  // `지금도 `, not `지금 도`). Defer only one frame so same-burst IME commits
+  // can catch up; a normal word separator flushes almost immediately before
+  // a human can type the next syllable. Keep an emergency kill switch for
+  // terminals/IMEs with different ordering semantics.
+  if (ENV_ON_RE.test(String(env.HERMES_TUI_DISABLE_IME_SPACE_REORDER ?? '').trim())) {
     return false
   }
 
@@ -164,6 +164,26 @@ export function shouldDeferImeSpace(
   }
 
   return HANGUL_RE.test(value.slice(prevPos(value, cursor), cursor))
+}
+
+export function applyLeadingImeSpaceBeforeText(
+  value: string,
+  cursor: number,
+  text: string,
+  range?: { end: number; start: number } | null
+): null | TextInsertResult {
+  if (range || cursor !== value.length || cursor <= 0 || !text.startsWith(' ') || text.length <= 1) {
+    return null
+  }
+
+  const previous = value.slice(prevPos(value, cursor), cursor)
+  const committed = text.slice(1)
+
+  if (!HANGUL_RE.test(previous) || !HANGUL_RE.test(committed[0] ?? '')) {
+    return null
+  }
+
+  return applyPrintableInsert(value, cursor, `${committed} `)
 }
 
 export function applyPendingImeSpaceAfterText(value: string, cursor: number, text: string): null | TextInsertResult {
@@ -375,9 +395,23 @@ export function canFastBackspaceShape(current: string, cursor: number, columns?:
 }
 
 export function supportsFastEchoTerminal(env: NodeJS.ProcessEnv = process.env): boolean {
+  const globalOverride = String(env.HERMES_TUI_FAST_ECHO ?? '').trim().toLowerCase()
+
+  if (globalOverride) {
+    return ENV_ON_RE.test(globalOverride)
+  }
+
   // Terminal.app still shows paint/cursor artifacts under the fast-echo
   // bypass path. Fall back to the normal Ink render path there.
   if ((env.TERM_PROGRAM ?? '').trim() === 'Apple_Terminal') {
+    return false
+  }
+
+  // tmux adds another terminal state layer around cursor movement and IME
+  // commits. Prefer the normal Ink render path there; the stdout bypass is an
+  // optimization, not a correctness requirement. HERMES_TUI_FAST_ECHO=1 keeps
+  // an explicit opt-in for performance/debug comparisons.
+  if (env.TMUX) {
     return false
   }
 
@@ -1217,6 +1251,16 @@ export function TextInput({
           deferImeSpace()
 
           return
+        }
+
+        if (!bracketed) {
+          const leadingImeSpace = applyLeadingImeSpaceBeforeText(v, c, text, range)
+
+          if (leadingImeSpace) {
+            commit(leadingImeSpace.value, leadingImeSpace.cursor)
+
+            return
+          }
         }
 
         if (text === '\n') {

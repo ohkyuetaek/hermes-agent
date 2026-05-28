@@ -189,6 +189,19 @@ describe('supportsFastEchoTerminal', () => {
     ).toBe(false)
   })
 
+  it('disables fast-echo by default inside tmux', () => {
+    expect(supportsFastEchoTerminal({ TMUX: '/tmp/tmux-501/default,123,0' } as NodeJS.ProcessEnv)).toBe(false)
+  })
+
+  it('allows explicit global fast-echo opt-in inside tmux', () => {
+    expect(
+      supportsFastEchoTerminal({
+        HERMES_TUI_FAST_ECHO: '1',
+        TMUX: '/tmp/tmux-501/default,123,0'
+      } as NodeJS.ProcessEnv)
+    ).toBe(true)
+  })
+
   it('allows explicit Termux fast-echo opt-in via env override', () => {
     expect(
       supportsFastEchoTerminal({

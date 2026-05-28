@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest'
 
 import {
+  applyLeadingImeSpaceBeforeText,
   applyPendingImeSpaceAfterText,
   applyPrintableInsert,
   shouldBatchPrintableBurstCommit,
@@ -35,26 +36,24 @@ describe('applyPrintableInsert', () => {
 })
 
 describe('Korean IME pending-space ordering', () => {
-  it('keeps ordinary Korean word separators native by default', () => {
-    expect(shouldDeferImeSpace('지금', '지금'.length, ' ', null)).toBe(false)
-    expect(shouldDeferImeSpace('지금도', '지금도'.length, ' ', null)).toBe(false)
+  it('briefly defers Hangul-following Space by default to catch same-burst late IME commits', () => {
+    expect(shouldDeferImeSpace('지금', '지금'.length, ' ', null)).toBe(true)
+    expect(shouldDeferImeSpace('지금도', '지금도'.length, ' ', null)).toBe(true)
   })
 
-  it('only defers Hangul spaces when the experimental reorder path is explicitly enabled', () => {
+  it('allows disabling Hangul pending-space reorder for terminals with native-safe ordering', () => {
     expect(
       shouldDeferImeSpace('지금', '지금'.length, ' ', null, {
-        HERMES_TUI_EXPERIMENTAL_IME_SPACE_REORDER: '1'
+        HERMES_TUI_DISABLE_IME_SPACE_REORDER: '1'
       } as NodeJS.ProcessEnv)
-    ).toBe(true)
+    ).toBe(false)
   })
 
   it('does not defer ASCII spaces away from Hangul composition edges', () => {
-    const env = { HERMES_TUI_EXPERIMENTAL_IME_SPACE_REORDER: '1' } as NodeJS.ProcessEnv
-
-    expect(shouldDeferImeSpace('hello', 5, ' ', null, env)).toBe(false)
-    expect(shouldDeferImeSpace('지금', 1, ' ', null, env)).toBe(false)
-    expect(shouldDeferImeSpace('지금', '지금'.length, 'x', null, env)).toBe(false)
-    expect(shouldDeferImeSpace('지금', '지금'.length, ' ', { end: 1, start: 0 }, env)).toBe(false)
+    expect(shouldDeferImeSpace('hello', 5, ' ', null)).toBe(false)
+    expect(shouldDeferImeSpace('지금', 1, ' ', null)).toBe(false)
+    expect(shouldDeferImeSpace('지금', '지금'.length, 'x', null)).toBe(false)
+    expect(shouldDeferImeSpace('지금', '지금'.length, ' ', { end: 1, start: 0 })).toBe(false)
   })
 
   it('reorders a deferred space after the late Korean syllable that committed it', () => {
@@ -62,6 +61,19 @@ describe('Korean IME pending-space ordering', () => {
       cursor: '지금도 '.length,
       value: '지금도 '
     })
+  })
+
+  it('reorders a leading Space bundled before a late Korean IME commit', () => {
+    expect(applyLeadingImeSpaceBeforeText('지금', '지금'.length, ' 도')).toEqual({
+      cursor: '지금도 '.length,
+      value: '지금도 '
+    })
+  })
+
+  it('does not reorder ordinary leading spaces outside Hangul IME edges', () => {
+    expect(applyLeadingImeSpaceBeforeText('hello', 5, ' world')).toBeNull()
+    expect(applyLeadingImeSpaceBeforeText('지금', 1, ' 도')).toBeNull()
+    expect(applyLeadingImeSpaceBeforeText('지금', '지금'.length, ' 도', { end: 1, start: 0 })).toBeNull()
   })
 })
 
