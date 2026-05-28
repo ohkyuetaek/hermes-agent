@@ -1521,6 +1521,12 @@ def _launch_tui(
     env.setdefault("HERMES_PYTHON", sys.executable)
     env.setdefault("HERMES_CWD", os.getcwd())
     env.setdefault("NODE_ENV", "development" if tui_dev else "production")
+    # tmux users expect the pane's copy-mode / scrollback (`Ctrl-b [`).  The
+    # TypeScript bundle also defaults this on, but setting the env here makes
+    # the behavior robust for external/prebuilt bundles and for launches before
+    # a freshly edited bundle is rebuilt.  Respect an explicit user override.
+    if env.get("TMUX") and "HERMES_TUI_INLINE" not in env:
+        env["HERMES_TUI_INLINE"] = "1"
 
     wt_info = None
     if worktree:
