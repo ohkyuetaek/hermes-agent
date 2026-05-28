@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 import run_agent as run_agent_module
+from agent.background_review import build_memory_write_metadata, summarize_background_review_actions
+from agent.tool_dispatch_helpers import make_tool_result_message
 from run_agent import AIAgent
 
 
@@ -38,6 +40,68 @@ class ImmediateThread:
 
     def start(self):
         self._target()
+
+
+def test_memory_write_metadata_classifies_user_profile_memory():
+    agent = _bare_agent()
+
+    metadata = build_memory_write_metadata(
+        agent,
+        target="user",
+        content="User prefers concise Korean status reports",
+        task_id="task-1",
+        tool_call_id="call-1",
+    )
+
+    assert metadata["write_origin"] == "assistant_tool"
+    assert metadata["execution_context"] == "foreground"
+    assert metadata["session_id"] == "test-session"
+    assert metadata["platform"] == "telegram"
+    assert metadata["tool_name"] == "memory"
+    assert metadata["task_id"] == "task-1"
+    assert metadata["tool_call_id"] == "call-1"
+    assert metadata["memory_target"] == "user"
+    assert metadata["memory_scope"] == "user_profile"
+    assert metadata["memory_kind"] == "preference"
+    assert metadata["memory_lifecycle"] == "durable_profile"
+
+
+def test_memory_write_metadata_classifies_agent_memory_routing_index():
+    agent = _bare_agent()
+
+    metadata = build_memory_write_metadata(
+        agent,
+        target="memory",
+        content="Project uses pytest with xdist",
+    )
+
+    assert metadata["memory_target"] == "memory"
+    assert metadata["memory_scope"] == "agent_memory"
+    assert metadata["memory_kind"] == "routing_fact"
+    assert metadata["memory_lifecycle"] == "durable_routing_index"
+
+
+def test_memory_write_metadata_omits_classification_without_target():
+    agent = _bare_agent()
+
+    metadata = build_memory_write_metadata(agent)
+
+    assert "memory_target" not in metadata
+    assert "memory_scope" not in metadata
+
+
+def test_background_review_summary_parses_wrapped_memory_tool_result():
+    import json
+
+    wrapped = make_tool_result_message(
+        "memory",
+        json.dumps({"success": True, "message": "Entry added", "target": "memory"}),
+        "call_wrapped_mem",
+    )
+
+    assert summarize_background_review_actions([wrapped], prior_snapshot=[]) == [
+        "Memory updated"
+    ]
 
 
 def test_background_review_shuts_down_memory_provider_before_close(monkeypatch):

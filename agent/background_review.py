@@ -234,6 +234,20 @@ _COMBINED_REVIEW_PROMPT = (
 
 
 
+def _unwrap_untrusted_tool_result_content(content: Any) -> Any:
+    """Return the payload inside an <untrusted_tool_result> wrapper if present."""
+    if not isinstance(content, str):
+        return content
+    stripped = content.lstrip()
+    if not stripped.startswith("<untrusted_tool_result"):
+        return content
+    payload_start = stripped.find("\n\n")
+    payload_end = stripped.rfind("\n</untrusted_tool_result>")
+    if payload_start == -1 or payload_end == -1 or payload_end < payload_start:
+        return content
+    return stripped[payload_start + 2 : payload_end]
+
+
 def summarize_background_review_actions(
     review_messages: List[Dict],
     prior_snapshot: List[Dict],
@@ -274,7 +288,8 @@ def summarize_background_review_actions(
             if isinstance(content_str, str) and content_str in existing_tool_contents:
                 continue
         try:
-            data = json.loads(msg.get("content", "{}"))
+            content = _unwrap_untrusted_tool_result_content(msg.get("content", "{}"))
+            data = json.loads(content)
         except (json.JSONDecodeError, TypeError):
             continue
         if not isinstance(data, dict) or not data.get("success"):
@@ -297,6 +312,47 @@ def summarize_background_review_actions(
     return actions
 
 
+def _memory_write_lifecycle_metadata(
+    target: Optional[str],
+    content: Optional[str] = None,
+) -> Dict[str, Any]:
+    """Classify a built-in memory-tool write for external providers.
+
+    Hermes' built-in MEMORY.md/USER.md stores remain the authoritative compact
+    prompt-memory source. These labels are provider-facing hints so richer
+    external memory systems can route writes without guessing from prose alone.
+    """
+    normalized_target = (target or "").strip().lower()
+    if normalized_target not in {"memory", "user"}:
+        return {}
+
+    entry = (content or "").strip()
+    common: Dict[str, Any] = {
+        "memory_target": normalized_target,
+        "memory_lifecycle": (
+            "durable_profile"
+            if normalized_target == "user"
+            else "durable_routing_index"
+        ),
+        "memory_entry_chars": len(entry),
+    }
+    if normalized_target == "user":
+        common.update(
+            {
+                "memory_scope": "user_profile",
+                "memory_kind": "preference",
+            }
+        )
+    else:
+        common.update(
+            {
+                "memory_scope": "agent_memory",
+                "memory_kind": "routing_fact",
+            }
+        )
+    return common
+
+
 def build_memory_write_metadata(
     agent: Any,
     *,
@@ -304,8 +360,10 @@ def build_memory_write_metadata(
     execution_context: Optional[str] = None,
     task_id: Optional[str] = None,
     tool_call_id: Optional[str] = None,
+    target: Optional[str] = None,
+    content: Optional[str] = None,
 ) -> Dict[str, Any]:
-    """Build provenance metadata for external memory-provider mirrors."""
+    """Build provenance and lifecycle metadata for external memory-provider mirrors."""
     metadata: Dict[str, Any] = {
         "write_origin": write_origin or getattr(agent, "_memory_write_origin", "assistant_tool"),
         "execution_context": (
@@ -321,6 +379,7 @@ def build_memory_write_metadata(
         metadata["task_id"] = task_id
     if tool_call_id:
         metadata["tool_call_id"] = tool_call_id
+    metadata.update(_memory_write_lifecycle_metadata(target, content))
     return {k: v for k, v in metadata.items() if v not in {None, ""}}
 
 

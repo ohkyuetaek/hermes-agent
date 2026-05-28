@@ -665,6 +665,8 @@ def execute_tool_calls_sequential(agent, assistant_message, messages: list, effe
                         metadata=agent._build_memory_write_metadata(
                             task_id=effective_task_id,
                             tool_call_id=getattr(tool_call, "id", None),
+                            target=target,
+                            content=function_args.get("content", ""),
                         ),
                     )
                 except Exception:

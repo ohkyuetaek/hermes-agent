@@ -26,6 +26,11 @@ class TestMemorySchema:
         assert "temporary task state" in description
         assert ">80%" not in description
 
+    def test_schema_exposes_read_action(self):
+        action = MEMORY_SCHEMA["parameters"]["properties"]["action"]
+        assert "read" in action["enum"]
+        assert "read" in MEMORY_SCHEMA["description"]
+
 
 # =========================================================================
 # Security scanning
@@ -352,6 +357,48 @@ class TestMemoryStoreRemove:
         assert result["success"] is False
 
 
+class TestMemoryStoreRead:
+    def test_read_returns_current_entries(self, store):
+        store.add("memory", "fact A")
+        store.add("memory", "fact B")
+
+        result = store.read("memory")
+
+        assert result["success"] is True
+        assert result["target"] == "memory"
+        assert result["entries"] == ["fact A", "fact B"]
+        assert result["entry_count"] == 2
+        assert "usage" in result
+
+    def test_read_reloads_sister_session_writes_from_disk(self, tmp_path, monkeypatch):
+        monkeypatch.setattr("tools.memory_tool.get_memory_dir", lambda: tmp_path)
+        store = MemoryStore(memory_char_limit=500, user_char_limit=300)
+        store.load_from_disk()
+        store.add("memory", "first fact")
+
+        # Simulate another session writing through the same tool-shaped file.
+        mem_file = tmp_path / "MEMORY.md"
+        mem_file.write_text(
+            f"first fact{ENTRY_DELIMITER}sister session fact",
+            encoding="utf-8",
+        )
+
+        result = store.read("memory")
+
+        assert result["success"] is True
+        assert result["entries"] == ["first fact", "sister session fact"]
+        assert store.memory_entries == ["first fact", "sister session fact"]
+
+    def test_read_user_target(self, store):
+        store.add("user", "User prefers concise Korean")
+
+        result = store.read("user")
+
+        assert result["success"] is True
+        assert result["target"] == "user"
+        assert result["entries"] == ["User prefers concise Korean"]
+
+
 class TestMemoryStorePersistence:
     def test_save_and_load_roundtrip(self, tmp_path, monkeypatch):
         monkeypatch.setattr("tools.memory_tool.get_memory_dir", lambda: tmp_path)
@@ -412,10 +459,17 @@ class TestMemoryToolDispatcher:
     def test_unknown_action(self, store):
         result = json.loads(memory_tool(action="unknown", store=store))
         assert result["success"] is False
+        assert "read" in result["error"]
 
     def test_add_via_tool(self, store):
         result = json.loads(memory_tool(action="add", target="memory", content="via tool", store=store))
         assert result["success"] is True
+
+    def test_read_via_tool(self, store):
+        store.add("memory", "via read")
+        result = json.loads(memory_tool(action="read", target="memory", store=store))
+        assert result["success"] is True
+        assert result["entries"] == ["via read"]
 
     def test_replace_requires_old_text(self, store):
         result = json.loads(memory_tool(action="replace", content="new", store=store))

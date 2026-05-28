@@ -274,7 +274,14 @@ class MemoryProvider(ABC):
         content: the entry content
         metadata: structured provenance for the write, when available. Common
           keys include ``write_origin``, ``execution_context``, ``session_id``,
-          ``parent_session_id``, ``platform``, and ``tool_name``.
+          ``parent_session_id``, ``platform``, and ``tool_name``. Built-in
+          memory-tool writes also include lifecycle/routing hints:
+          ``memory_target`` (``memory`` or ``user``), ``memory_scope``
+          (``agent_memory`` or ``user_profile``), ``memory_kind``
+          (``routing_fact`` or ``preference``), ``memory_lifecycle``
+          (``durable_routing_index`` or ``durable_profile``), and
+          ``memory_entry_chars``. These are hints for richer external providers;
+          the ``target`` argument remains the compatibility source of truth.
 
         Use to mirror built-in memory writes to your backend.
         """
