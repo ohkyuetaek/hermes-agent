@@ -220,22 +220,26 @@ const ASCII_PRINTABLE_RE = /^[\x20-\x7e]+$/
  * The fast-echo path bypasses Ink's renderer and writes text directly to
  * stdout, so the stored value, the rendered terminal cells, and the cursor
  * column must all stay in sync without any layout work. We only allow it
- * when the inserted text is pure printable ASCII so that:
+ * when the current single-line buffer and inserted text are pure printable
+ * ASCII so that:
  *
  *   - `text.length` matches the number of grapheme clusters (no combining
  *     marks, no surrogate pairs, no precomposed CJK / Latin-Extended
  *     letters that an IME might still be holding open as a composition),
- *   - terminal width is exactly 1 cell per character (no East-Asian wide,
- *     no zero-width, no ambiguous-width fonts),
- *   - input methods (Vietnamese Telex, IME, dead-keys) cannot leak
- *     intermediate composition bytes through the bypass before the final
- *     commit arrives — those always go through the normal Ink render path
- *     and stay layout-accurate (closes #5221, #7443, #17602/#17603).
+ *   - terminal width is exactly 1 cell per character for both the existing
+ *     line and the appended text (no East-Asian wide, no zero-width, no
+ *     ambiguous-width fonts),
+ *   - input methods (Vietnamese Telex, Korean/Chinese/Japanese IMEs,
+ *     dead-keys) cannot leave a non-ASCII composition in the rendered line
+ *     and then leak an ASCII space through the bypass before the normal Ink
+ *     render reconciles the physical cursor (closes #5221, #7443,
+ *     #17602/#17603 and Korean-space cursor drift).
  *
  * We deliberately do NOT just check `stringWidth(text) === text.length`:
  * Vietnamese precomposed letters like "ề" (U+1EC1) report width 1 and
  * length 1 but are still produced by IME compositions and must not be
- * fast-echoed.
+ * fast-echoed. Likewise, an ASCII space after Korean text must take the
+ * normal render path even though the appended text itself is ASCII.
  */
 export function canFastAppendShape(
   current: string,
@@ -253,6 +257,10 @@ export function canFastAppendShape(
   }
 
   if (current.includes('\n')) {
+    return false
+  }
+
+  if (!ASCII_PRINTABLE_RE.test(current)) {
     return false
   }
 

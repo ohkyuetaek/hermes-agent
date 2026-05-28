@@ -37,6 +37,11 @@ describe('canFastAppendShape', () => {
     expect(canFastAppendShape('hi\nthere', 8, 'x', COLS, 5)).toBe(false)
   })
 
+  it('rejects ASCII append after non-ASCII current text so IME/wide cells re-render normally', () => {
+    expect(canFastAppendShape('안녕', '안녕'.length, ' ', COLS, 4)).toBe(false)
+    expect(canFastAppendShape('hello你', 'hello你'.length, ' ', COLS, 7)).toBe(false)
+  })
+
   it('rejects when appending would hit the wrap column', () => {
     // Reaching cols on append must trigger a wrap, which the bypass
     // cannot draw. Stay strictly below cols.
