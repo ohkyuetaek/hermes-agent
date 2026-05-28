@@ -526,7 +526,7 @@ def telegram_bot_commands() -> list[tuple[str, str]]:
     """
     overrides = _resolve_config_gates()
     result: list[tuple[str, str]] = []
-    menu_excluded = {"insights", "platform", "reload-skills", "usage"}
+    menu_excluded = {"insights", "platform", "reload-mcp", "reload-skills", "usage"}
     for cmd in COMMAND_REGISTRY:
         if not _is_gateway_available(cmd, overrides):
             continue
