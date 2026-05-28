@@ -184,8 +184,27 @@ const EXTENDED_KEYS_TERMINALS = ['iTerm.app', 'kitty', 'WezTerm', 'ghostty', 'tm
 
 /** True if this terminal correctly handles extended key reporting
  *  (Kitty keyboard protocol + xterm modifyOtherKeys). */
-export function supportsExtendedKeys(): boolean {
-  return EXTENDED_KEYS_TERMINALS.includes(env.terminal ?? '')
+export function supportsExtendedKeys(terminal: string | null = env.terminal): boolean {
+  return EXTENDED_KEYS_TERMINALS.includes(terminal ?? '')
+}
+
+/**
+ * Kitty keyboard mode must not be pushed from inside tmux. Some outer
+ * terminals (notably iTerm2) honor CSI >1u even when it is emitted by an app
+ * running in a tmux pane; then Ctrl+B reaches tmux as a CSI-u sequence rather
+ * than the C-b prefix byte, so the user's tmux prefix stops working. Tmux has
+ * its own modifyOtherKeys path for pane applications, so keep Kitty mode for
+ * direct terminal sessions only.
+ */
+export function shouldEnableKittyKeyboard(
+  processEnv: NodeJS.ProcessEnv = process.env,
+  terminal: string | null = env.terminal
+): boolean {
+  return supportsExtendedKeys(terminal) && !processEnv.TMUX
+}
+
+export function shouldEnableModifyOtherKeys(terminal: string | null = env.terminal): boolean {
+  return supportsExtendedKeys(terminal)
 }
 
 /** True if the terminal scrolls the viewport when it receives cursor-up

@@ -1,8 +1,10 @@
 import { describe, expect, it } from 'vitest'
 
 import {
+  applyPendingImeSpaceAfterText,
   applyPrintableInsert,
   shouldBatchPrintableBurstCommit,
+  shouldDeferImeSpace,
   shouldRouteMultiCharInputAsPaste
 } from '../components/textInput.js'
 
@@ -29,6 +31,26 @@ describe('applyPrintableInsert', () => {
   it('rejects control or escape-bearing input', () => {
     expect(applyPrintableInsert('abc', 3, '\x1b[200~pasted')).toBeNull()
     expect(applyPrintableInsert('abc', 3, '\t')).toBeNull()
+  })
+})
+
+describe('Korean IME pending-space ordering', () => {
+  it('defers a plain space at the end of Hangul text', () => {
+    expect(shouldDeferImeSpace('지금', '지금'.length, ' ', null)).toBe(true)
+  })
+
+  it('does not defer ASCII spaces away from Hangul composition edges', () => {
+    expect(shouldDeferImeSpace('hello', 5, ' ', null)).toBe(false)
+    expect(shouldDeferImeSpace('지금', 1, ' ', null)).toBe(false)
+    expect(shouldDeferImeSpace('지금', '지금'.length, 'x', null)).toBe(false)
+    expect(shouldDeferImeSpace('지금', '지금'.length, ' ', { end: 1, start: 0 })).toBe(false)
+  })
+
+  it('reorders a deferred space after the late Korean syllable that committed it', () => {
+    expect(applyPendingImeSpaceAfterText('지금', '지금'.length, '도')).toEqual({
+      cursor: '지금도 '.length,
+      value: '지금도 '
+    })
   })
 })
 

@@ -35,7 +35,9 @@ const FWD_DEL_RE = new RegExp(`${ESC}\\[3(?:[~$^]|;)`)
 const PRINTABLE = /^[ -~\u00a0-\uffff]+$/
 const BRACKET_PASTE = new RegExp(`${ESC}?\\[20[01]~`, 'g')
 const FRAME_BATCH_MS = 16
+const IME_SPACE_DELAY_MS = 32
 const MULTI_CLICK_MS = 500
+const HANGUL_RE = /[\u1100-\u11ff\u3130-\u318f\uac00-\ud7af]/
 
 const invert = (s: string) => INV + s + INV_OFF
 const dim = (s: string) => DIM + s + DIM_OFF
@@ -137,6 +139,29 @@ function prevPos(s: string, p: number) {
   }
 
   return prev
+}
+
+export function shouldDeferImeSpace(
+  value: string,
+  cursor: number,
+  text: string,
+  range?: { end: number; start: number } | null
+): boolean {
+  if (text !== ' ' || range || cursor !== value.length || cursor <= 0) {
+    return false
+  }
+
+  return HANGUL_RE.test(value.slice(prevPos(value, cursor), cursor))
+}
+
+export function applyPendingImeSpaceAfterText(value: string, cursor: number, text: string): null | TextInsertResult {
+  if (!HANGUL_RE.test(text)) {
+    return null
+  }
+
+  const inserted = applyPrintableInsert(value, cursor, text)
+
+  return inserted ? applyPrintableInsert(inserted.value, inserted.cursor, ' ') : null
 }
 
 function nextPos(s: string, p: number) {
@@ -447,6 +472,8 @@ export function TextInput({
   const parentChangeTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
   const pendingParentValue = useRef<string | null>(null)
   const localRenderTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const pendingImeSpaceTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const pendingImeSpace = useRef(false)
   const lineWidthRef = useRef(stringWidth(value.includes('\n') ? value.slice(value.lastIndexOf('\n') + 1) : value))
   const mouseAnchorRef = useRef<null | number>(null)
   const lastClickRef = useRef<{ at: number; offset: number }>({ at: 0, offset: -1 })
@@ -586,6 +613,10 @@ export function TextInput({
       if (localRenderTimer.current) {
         clearTimeout(localRenderTimer.current)
       }
+
+      if (pendingImeSpaceTimer.current) {
+        clearTimeout(pendingImeSpaceTimer.current)
+      }
     },
     []
   )
@@ -690,6 +721,59 @@ export function TextInput({
         scheduleParentChange(next)
       }
     }
+  }
+
+  const cancelPendingImeSpace = () => {
+    if (pendingImeSpaceTimer.current) {
+      clearTimeout(pendingImeSpaceTimer.current)
+      pendingImeSpaceTimer.current = null
+    }
+  }
+
+  const flushPendingImeSpace = () => {
+    if (!pendingImeSpace.current) {
+      return false
+    }
+
+    cancelPendingImeSpace()
+    pendingImeSpace.current = false
+
+    const inserted = applyPrintableInsert(vRef.current, curRef.current, ' ')
+
+    if (inserted) {
+      commit(inserted.value, inserted.cursor)
+    }
+
+    return true
+  }
+
+  const deferImeSpace = () => {
+    cancelPendingImeSpace()
+    pendingImeSpace.current = true
+    pendingImeSpaceTimer.current = setTimeout(() => {
+      pendingImeSpaceTimer.current = null
+      flushPendingImeSpace()
+    }, IME_SPACE_DELAY_MS)
+  }
+
+  const applyPendingImeSpaceIfImeCommit = (text: string) => {
+    if (!pendingImeSpace.current) {
+      return false
+    }
+
+    const reordered = applyPendingImeSpaceAfterText(vRef.current, curRef.current, text)
+
+    if (!reordered) {
+      flushPendingImeSpace()
+
+      return false
+    }
+
+    cancelPendingImeSpace()
+    pendingImeSpace.current = false
+    commit(reordered.value, reordered.cursor)
+
+    return true
   }
 
   const swap = (from: typeof undo, to: typeof redo) => {
@@ -894,6 +978,7 @@ export function TextInput({
       // follow-up on #19835). The pass-through predicate is a no-op for
       // ordinary typing and plain paste when voice is unbound to 'v'.
       if (shouldPassThroughToGlobalHandler(inp, k, voiceRecordKey)) {
+        flushPendingImeSpace()
         flushKeyBurst()
 
         return
@@ -905,6 +990,7 @@ export function TextInput({
         eventRaw === '\x16' ||
         (isMac && isActionMod(k) && inp.toLowerCase() === 'v')
       ) {
+        flushPendingImeSpace()
         flushKeyBurst()
 
         if (cbPaste.current) {
@@ -923,6 +1009,7 @@ export function TextInput({
       }
 
       if (isMac && isActionMod(k) && inp.toLowerCase() === 'c') {
+        flushPendingImeSpace()
         flushKeyBurst()
 
         const range = selRange()
@@ -937,6 +1024,7 @@ export function TextInput({
       }
 
       if (k.upArrow || k.downArrow) {
+        flushPendingImeSpace()
         flushKeyBurst()
 
         const next = lineNav(vRef.current, curRef.current, k.upArrow ? -1 : 1)
@@ -951,6 +1039,7 @@ export function TextInput({
       }
 
       if (k.return) {
+        flushPendingImeSpace()
         flushKeyBurst()
 
         if (k.shift || k.ctrl || (isMac ? isActionMod(k) : k.meta)) {
@@ -976,6 +1065,7 @@ export function TextInput({
       const isPrintableInput = (event.keypress.isPasted || inp.length > 0) && PRINTABLE.test(inp.replace(BRACKET_PASTE, ''))
 
       if (!isPrintableInput) {
+        flushPendingImeSpace()
         flushKeyBurst()
       }
 
@@ -1099,6 +1189,21 @@ export function TextInput({
         }
 
         if (!text) {
+          return
+        }
+
+        if (pendingImeSpace.current) {
+          if (applyPendingImeSpaceIfImeCommit(text)) {
+            return
+          }
+
+          c = curRef.current
+          v = vRef.current
+        }
+
+        if (shouldDeferImeSpace(v, c, text, range)) {
+          deferImeSpace()
+
           return
         }
 
