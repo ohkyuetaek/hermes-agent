@@ -1,6 +1,10 @@
 import { describe, expect, it } from 'vitest'
 
-import { applyPrintableInsert, shouldRouteMultiCharInputAsPaste } from '../components/textInput.js'
+import {
+  applyPrintableInsert,
+  shouldBatchPrintableBurstCommit,
+  shouldRouteMultiCharInputAsPaste
+} from '../components/textInput.js'
 
 describe('applyPrintableInsert', () => {
   it('applies non-bracketed multi-character bursts immediately', () => {
@@ -25,6 +29,18 @@ describe('applyPrintableInsert', () => {
   it('rejects control or escape-bearing input', () => {
     expect(applyPrintableInsert('abc', 3, '\x1b[200~pasted')).toBeNull()
     expect(applyPrintableInsert('abc', 3, '\t')).toBeNull()
+  })
+})
+
+describe('shouldBatchPrintableBurstCommit', () => {
+  it('batches plain ASCII bursts for typing throughput', () => {
+    expect(shouldBatchPrintableBurstCommit('xxxxx')).toBe(true)
+    expect(shouldBatchPrintableBurstCommit('hello world')).toBe(true)
+  })
+
+  it('does not batch IME/non-ASCII bursts such as Korean syllable plus space', () => {
+    expect(shouldBatchPrintableBurstCommit('요 ')).toBe(false)
+    expect(shouldBatchPrintableBurstCommit('안녕')).toBe(false)
   })
 })
 

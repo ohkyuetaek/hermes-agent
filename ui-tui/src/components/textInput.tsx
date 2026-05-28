@@ -122,6 +122,8 @@ export function applyPrintableInsert(
 
 export const shouldRouteMultiCharInputAsPaste = (text: string): boolean => text.includes('\n')
 
+export const shouldBatchPrintableBurstCommit = (text: string): boolean => ASCII_PRINTABLE_RE.test(text)
+
 function prevPos(s: string, p: number) {
   const pos = snapPos(s, p)
   let prev = 0
@@ -1123,7 +1125,11 @@ export function TextInput({
 
           v = inserted.value
           c = inserted.cursor
-          scheduleKeyBurstCommit(v, c)
+          if (shouldBatchPrintableBurstCommit(text)) {
+            scheduleKeyBurstCommit(v, c)
+          } else {
+            commit(v, c)
+          }
 
           return
         }
