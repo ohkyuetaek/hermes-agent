@@ -228,6 +228,11 @@ export function useConfigSync({
   sid
 }: UseConfigSyncOptions) {
   const mtimeRef = useRef(0)
+  // Prevents concurrent reload.mcp RPCs when the RPC takes longer than
+  // MTIME_POLL_MS (e.g. slow mobile connection) and a second mtime change
+  // occurs within that window. The second change is dropped; the next poll
+  // tick after the in-flight call completes will pick it up if still present.
+  const reloadInFlightRef = useRef(false)
 
   useEffect(() => {
     if (!sid) {
@@ -266,16 +271,29 @@ export function useConfigSync({
           return
         }
 
-        mtimeRef.current = next
-
-        quietRpc<ReloadMcpResponse>(gw, 'reload.mcp', { session_id: sid, confirm: true }).then(
-          r => r && turnController.pushActivity('MCP reloaded after config change')
-        )
-        void hydrateFullConfig(gw, setBellOnComplete, setVoiceRecordKey)
+        // Move mtimeRef update inside the guard so a skipped reload (in-flight)
+        // does not consume the mtime advancement — the next poll tick will still
+        // see the change and trigger the reload once the prior one completes.
+        if (!reloadInFlightRef.current) {
+          mtimeRef.current = next
+          reloadInFlightRef.current = true
+          quietRpc<ReloadMcpResponse>(gw, 'reload.mcp', { session_id: sid, confirm: true })
+            .then(r => r && turnController.pushActivity('MCP reloaded after config change'))
+            .finally(() => {
+              reloadInFlightRef.current = false
+            })
+          void hydrateFullConfig(gw, setBellOnComplete, setVoiceRecordKey)
+        }
       })
     }, MTIME_POLL_MS)
 
-    return () => clearInterval(id)
+    return () => {
+      clearInterval(id)
+      // Reset the in-flight flag so a new effect lifetime (after gw/sid change)
+      // does not inherit a permanently-locked ref from a promise that may never
+      // settle if the previous GatewayClient was torn down.
+      reloadInFlightRef.current = false
+    }
   }, [gw, setBellOnComplete, setVoiceRecordKey, sid])
 }
 
