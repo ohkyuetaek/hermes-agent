@@ -68,6 +68,12 @@ export const hydrateLiveSessionInflight = (inflight?: null | SessionInflightTurn
   turnController.hydrateStreamingText(assistant)
 }
 
+export const sessionCreateParams = (cols: number) => {
+  const cwd = process.env.HERMES_CWD?.trim()
+
+  return cwd ? { cols, cwd } : { cols }
+}
+
 const trimTail = (items: Msg[]) => {
   const q = [...items]
 
@@ -167,7 +173,7 @@ export function useSessionLifecycle(opts: UseSessionLifecycleOptions) {
         await closeSession(getUiState().sid)
       }
 
-      const r = await rpc<SessionCreateResponse>('session.create', { cols: colsRef.current })
+      const r = await rpc<SessionCreateResponse>('session.create', sessionCreateParams(colsRef.current))
 
       if (!r) {
         patchUiState({ status: 'ready' })

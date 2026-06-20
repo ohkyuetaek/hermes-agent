@@ -3633,6 +3633,7 @@ class SessionDB:
         source: str = None,
         limit: int = 20,
         offset: int = 0,
+        cwd: str = None,
     ) -> List[Dict[str, Any]]:
         """List sessions, optionally filtered by source.
 
@@ -3648,20 +3649,23 @@ class SessionDB:
             "FROM messages GROUP BY session_id"
             ") m ON m.session_id = s.id "
         )
+        where_clauses = []
+        params = []
+        if source:
+            where_clauses.append("s.source = ?")
+            params.append(source)
+        if cwd:
+            where_clauses.append("s.cwd = ?")
+            params.append(cwd)
+        where_sql = f"WHERE {' AND '.join(where_clauses)} " if where_clauses else ""
+        params.extend([limit, offset])
         with self._lock:
-            if source:
-                cursor = self._conn.execute(
-                    f"{select_with_last_active}"
-                    "WHERE s.source = ? "
-                    "ORDER BY last_active DESC, s.started_at DESC, s.id DESC LIMIT ? OFFSET ?",
-                    (source, limit, offset),
-                )
-            else:
-                cursor = self._conn.execute(
-                    f"{select_with_last_active}"
-                    "ORDER BY last_active DESC, s.started_at DESC, s.id DESC LIMIT ? OFFSET ?",
-                    (limit, offset),
-                )
+            cursor = self._conn.execute(
+                f"{select_with_last_active}"
+                f"{where_sql}"
+                "ORDER BY last_active DESC, s.started_at DESC, s.id DESC LIMIT ? OFFSET ?",
+                tuple(params),
+            )
             return [dict(row) for row in cursor.fetchall()]
 
     # =========================================================================

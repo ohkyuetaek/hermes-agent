@@ -75,6 +75,24 @@ class TestChatVerboseArg:
 
         assert args.verbose is True
 
+    def test_top_level_continue_cwd_flag(self):
+        from hermes_cli._parser import build_top_level_parser
+
+        parser, _subparsers, _chat_parser = build_top_level_parser()
+        args = parser.parse_args(["-c", "--cwd"])
+
+        assert args.continue_last is True
+        assert args.continue_cwd is True
+
+    def test_chat_continue_cwd_flag(self):
+        from hermes_cli._parser import build_top_level_parser
+
+        parser, _subparsers, _chat_parser = build_top_level_parser()
+        args = parser.parse_args(["chat", "-c", "--cwd"])
+
+        assert args.continue_last is True
+        assert args.continue_cwd is True
+
     def test_cmd_chat_forwards_none_when_verbose_is_absent(self, monkeypatch):
         import types
         import sys
@@ -102,6 +120,7 @@ class TestChatVerboseArg:
         monkeypatch.setitem(sys.modules, "tools.skills_sync", fake_skills_sync)
         monkeypatch.setattr(main_mod, "_has_any_provider_configured", lambda: True)
         monkeypatch.setattr(main_mod, "_pin_kanban_board_env", lambda: None)
+        monkeypatch.setattr(main_mod, "_resolve_use_tui", lambda args: False)
 
         main_mod.cmd_chat(args)
 

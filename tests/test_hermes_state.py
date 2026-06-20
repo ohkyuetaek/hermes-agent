@@ -1322,6 +1322,13 @@ class TestSearchSessions:
         assert len(sessions) == 1
         assert sessions[0]["source"] == "cli"
 
+    def test_filter_by_cwd(self, db):
+        db.create_session(session_id="s1", source="cli", cwd="/tmp/project-a")
+        db.create_session(session_id="s2", source="cli", cwd="/tmp/project-b")
+
+        sessions = db.search_sessions(source="cli", cwd="/tmp/project-a")
+        assert [session["id"] for session in sessions] == ["s1"]
+
     def test_pagination(self, db):
         for i in range(5):
             db.create_session(session_id=f"s{i}", source="cli")

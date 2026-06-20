@@ -7,7 +7,12 @@ import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import { turnController } from '../app/turnController.js'
 import { getTurnState, resetTurnState } from '../app/turnStore.js'
 import { patchUiState, resetUiState } from '../app/uiStore.js'
-import { hydrateLiveSessionInflight, liveSessionInflightMessages, writeActiveSessionFile } from '../app/useSessionLifecycle.js'
+import {
+  hydrateLiveSessionInflight,
+  liveSessionInflightMessages,
+  sessionCreateParams,
+  writeActiveSessionFile
+} from '../app/useSessionLifecycle.js'
 
 describe('writeActiveSessionFile', () => {
   let dir = ''
@@ -26,6 +31,30 @@ describe('writeActiveSessionFile', () => {
     writeActiveSessionFile('actual_session', path)
 
     expect(JSON.parse(readFileSync(path, 'utf8'))).toEqual({ session_id: 'actual_session' })
+  })
+})
+
+describe('sessionCreateParams', () => {
+  const originalCwd = process.env.HERMES_CWD
+
+  afterEach(() => {
+    if (originalCwd === undefined) {
+      delete process.env.HERMES_CWD
+    } else {
+      process.env.HERMES_CWD = originalCwd
+    }
+  })
+
+  it('passes the launching cwd when Hermes provided one', () => {
+    process.env.HERMES_CWD = '/tmp/hermes-project'
+
+    expect(sessionCreateParams(120)).toEqual({ cols: 120, cwd: '/tmp/hermes-project' })
+  })
+
+  it('does not stamp a blank cwd onto new sessions', () => {
+    process.env.HERMES_CWD = '   '
+
+    expect(sessionCreateParams(80)).toEqual({ cols: 80 })
   })
 })
 

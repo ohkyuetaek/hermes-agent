@@ -6025,6 +6025,7 @@ class HermesCLI(CLIAgentSetupMixin, CLICommandsMixin):
                     self._session_db.create_session(
                         session_id=self.session_id,
                         source=os.environ.get("HERMES_SESSION_SOURCE", "cli"),
+                        cwd=os.getenv("TERMINAL_CWD", os.getcwd()),
                         model=self.model,
                         model_config={
                             "max_iterations": self.max_turns,

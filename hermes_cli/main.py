@@ -1119,14 +1119,14 @@ def _session_browse_picker(sessions: list) -> Optional[str]:
             return None
 
 
-def _resolve_last_session(source: str = "cli") -> Optional[str]:
-    """Look up the most recently-used session ID for a source."""
+def _resolve_last_session(source: str = "cli", cwd: Optional[str] = None) -> Optional[str]:
+    """Look up the most recently-used session ID for a source, optionally scoped to a cwd."""
     db = None
     try:
         from hermes_state import SessionDB
 
         db = SessionDB()
-        sessions = db.search_sessions(source=source, limit=1)
+        sessions = db.search_sessions(source=source, cwd=cwd, limit=1)
         return sessions[0]["id"] if sessions else None
     except Exception:
         pass
@@ -2138,8 +2138,16 @@ def cmd_chat(args):
 
     # Resolve --continue into --resume with the latest session or by name
     continue_val = getattr(args, "continue_last", None)
+    continue_cwd = bool(getattr(args, "continue_cwd", False))
+    continue_cwd_path = os.getcwd() if continue_cwd else None
+    if continue_cwd and not continue_val:
+        print("--cwd can only be used with --continue/-c.")
+        sys.exit(1)
     if continue_val and not getattr(args, "resume", None):
         if isinstance(continue_val, str):
+            if continue_cwd:
+                print("--cwd is only supported with bare --continue/-c, not a named session.")
+                sys.exit(1)
             # -c "session name" — resolve by title or ID
             resolved = _resolve_session_by_name_or_id(continue_val)
             if resolved:
@@ -2151,14 +2159,19 @@ def cmd_chat(args):
         else:
             # -c with no argument — continue the most recent session
             source = "tui" if use_tui else "cli"
-            last_id = _resolve_last_session(source=source)
+            last_id = _resolve_last_session(source=source, cwd=continue_cwd_path)
             if not last_id and source == "tui":
-                last_id = _resolve_last_session(source="cli")
+                last_id = _resolve_last_session(source="cli", cwd=continue_cwd_path)
             if last_id:
                 args.resume = last_id
             else:
                 kind = "TUI" if use_tui else "CLI"
-                print(f"No previous {kind} session found to continue.")
+                if continue_cwd_path:
+                    print(f"No previous {kind} session found in current directory:")
+                    print(f"  {continue_cwd_path}")
+                    print("Use 'hermes sessions list' to see all available sessions.")
+                else:
+                    print(f"No previous {kind} session found to continue.")
                 sys.exit(1)
 
     # Resolve --resume by title if it's not a direct session ID
@@ -12581,6 +12594,7 @@ def main():
             ("toolsets", None),
             ("verbose", None),
             ("worktree", False),
+            ("continue_cwd", False),
         ]:
             if not hasattr(args, attr):
                 setattr(args, attr, default)
@@ -12598,6 +12612,7 @@ def main():
             ("resume", None),
             ("continue_last", None),
             ("worktree", False),
+            ("continue_cwd", False),
         ]:
             if not hasattr(args, attr):
                 setattr(args, attr, default)

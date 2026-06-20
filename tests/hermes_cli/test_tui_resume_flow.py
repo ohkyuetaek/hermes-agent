@@ -10,6 +10,7 @@ import pytest
 def _args(**overrides):
     base = {
         "continue_last": None,
+        "continue_cwd": False,
         "model": None,
         "provider": None,
         "resume": None,
@@ -33,7 +34,7 @@ def test_cmd_chat_tui_continue_uses_latest_tui_session(monkeypatch, main_mod):
     calls = []
     captured = {}
 
-    def fake_resolve_last(source="cli"):
+    def fake_resolve_last(source="cli", cwd=None):
         calls.append(source)
         return "20260408_235959_a1b2c3" if source == "tui" else None
 
@@ -63,7 +64,7 @@ def test_cmd_chat_tui_continue_falls_back_to_latest_cli_session(monkeypatch, mai
     calls = []
     captured = {}
 
-    def fake_resolve_last(source="cli"):
+    def fake_resolve_last(source="cli", cwd=None):
         calls.append(source)
         if source == "tui":
             return None
@@ -91,6 +92,37 @@ def test_cmd_chat_tui_continue_falls_back_to_latest_cli_session(monkeypatch, mai
 
     assert calls == ["tui", "cli"]
     assert captured["resume"] == "20260408_235959_d4e5f6"
+
+
+def test_cmd_chat_tui_continue_can_scope_to_current_cwd(monkeypatch, main_mod, tmp_path):
+    calls = []
+    captured = {}
+
+    def fake_resolve_last(source="cli", cwd=None):
+        calls.append((source, cwd))
+        return "20260408_235959_cwd123" if source == "tui" and cwd == str(tmp_path) else None
+
+    def fake_launch(
+        resume_session_id=None,
+        tui_dev=False,
+        model=None,
+        provider=None,
+        toolsets=None,
+        **kwargs,
+    ):
+        captured["resume"] = resume_session_id
+        raise SystemExit(0)
+
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setattr(main_mod, "_resolve_last_session", fake_resolve_last)
+    monkeypatch.setattr(main_mod, "_resolve_session_by_name_or_id", lambda val: val)
+    monkeypatch.setattr(main_mod, "_launch_tui", fake_launch)
+
+    with pytest.raises(SystemExit):
+        main_mod.cmd_chat(_args(continue_last=True, continue_cwd=True))
+
+    assert calls == [("tui", str(tmp_path))]
+    assert captured["resume"] == "20260408_235959_cwd123"
 
 
 def test_cmd_chat_tui_resume_resolves_title_before_launch(monkeypatch, main_mod):

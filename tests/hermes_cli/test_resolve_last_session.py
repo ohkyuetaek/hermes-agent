@@ -12,6 +12,9 @@ class _FakeDB:
 
     def search_sessions(self, source=None, limit=20, **_kw):
         rows = [r for r in self._rows if r.get("source") == source] if source else list(self._rows)
+        cwd = _kw.get("cwd")
+        if cwd:
+            rows = [r for r in rows if r.get("cwd") == cwd]
         rows.sort(
             key=lambda r: float(r.get("last_active") or r.get("started_at") or 0),
             reverse=True,
@@ -87,6 +90,27 @@ def test_search_sessions_exposes_last_active_column(tmp_path, monkeypatch):
 def test_resolve_last_session_returns_none_when_empty(monkeypatch):
     monkeypatch.setattr("hermes_state.SessionDB", lambda: _FakeDB([]))
     assert _resolve_last_session("cli") is None
+
+
+def test_resolve_last_session_can_scope_to_cwd(monkeypatch):
+    rows = [
+        {
+            "id": "newer_other_dir",
+            "source": "cli",
+            "cwd": "/tmp/other",
+            "started_at": 1000.0,
+            "last_active": 1000.0,
+        },
+        {
+            "id": "older_current_dir",
+            "source": "cli",
+            "cwd": "/tmp/current",
+            "started_at": 500.0,
+            "last_active": 500.0,
+        },
+    ]
+    monkeypatch.setattr("hermes_state.SessionDB", lambda: _FakeDB(rows))
+    assert _resolve_last_session("cli", cwd="/tmp/current") == "older_current_dir"
 
 
 def test_resolve_last_session_closes_db_on_search_error(monkeypatch):

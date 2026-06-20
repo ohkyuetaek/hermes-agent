@@ -44,6 +44,7 @@ Examples:
     hermes --tui                  Launch the modern TUI (or set display.interface: tui)
     hermes --cli                  Force the classic REPL (overrides display.interface: tui)
     hermes -c                     Resume the most recent session
+    hermes -c --cwd               Resume the most recent session from this directory
     hermes -c "my project"        Resume a session by name (latest in lineage)
     hermes --resume <session_id>  Resume a specific session by ID
     hermes setup                  Run setup wizard
@@ -157,6 +158,13 @@ def build_top_level_parser():
         default=None,
         metavar="SESSION_NAME",
         help="Resume a session by name, or the most recent if no name given",
+    )
+    parser.add_argument(
+        "--cwd",
+        dest="continue_cwd",
+        action="store_true",
+        default=False,
+        help="With --continue/-c, resume the most recent session started from the current working directory",
     )
     parser.add_argument(
         "--worktree",
@@ -313,6 +321,13 @@ def build_top_level_parser():
         default=argparse.SUPPRESS,
         metavar="SESSION_NAME",
         help="Resume a session by name, or the most recent if no name given",
+    )
+    chat_parser.add_argument(
+        "--cwd",
+        dest="continue_cwd",
+        action="store_true",
+        default=argparse.SUPPRESS,
+        help="With --continue/-c, resume the most recent session started from the current working directory",
     )
     chat_parser.add_argument(
         "--worktree",
