@@ -68,6 +68,16 @@ export function isProgressReportingAvailable(): boolean {
  * When supported, BSU/ESU sequences prevent visible flicker during redraws.
  */
 export function isSynchronizedOutputSupported(): boolean {
+  // Explicit opt-in wins over every heuristic below, including the tmux skip.
+  // For users whose outer terminal advertises Tc/RGB + DEC 2026 through tmux
+  // (e.g. `terminal-overrides ,*:Tc` + allow-passthrough), this restores the
+  // BSU/ESU flicker-free path that the tmux default-config skip disables.
+  // Returning a single source here keeps both consumers (ink.tsx BSU/ESU
+  // enable + skipSyncMarkers) in agreement.
+  if (/^(?:1|true|yes|on)$/i.test((process.env.HERMES_TUI_SYNC_OUTPUT ?? '').trim())) {
+    return true
+  }
+
   // tmux parses and proxies every byte but doesn't implement DEC 2026.
   // BSU/ESU pass through to the outer terminal but tmux has already
   // broken atomicity by chunking. Skip to save 16 bytes/frame + parser work.

@@ -75,8 +75,12 @@ const renderEstimateLine = (line: string) => {
 
 export const compactPreview = (s: string, max: number) => {
   const one = s.replace(WS_RE, ' ').trim()
+  // Guard non-positive budgets: a negative `max` (e.g. a caller subtracting a
+  // fixed gutter from a too-narrow width) would make `slice(0, max - 1)` index
+  // from the end and emit garbled, over-budget text. Clamp to an empty preview.
+  const budget = Math.max(0, Math.floor(max))
 
-  return !one ? '' : one.length > max ? one.slice(0, max - 1) + '…' : one
+  return !one || budget === 0 ? '' : one.length > budget ? one.slice(0, budget - 1) + '…' : one
 }
 
 export const estimateTokensRough = (text: string) => (!text ? 0 : (text.length + 3) >> 2)

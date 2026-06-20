@@ -9,6 +9,34 @@ import { lruEvict } from './lru.js'
 const EMOJI_REGEX = emojiRegex()
 
 /**
+ * Resolve how East-Asian *ambiguous*-width characters (box-drawing ─│┌, the
+ * ellipsis …, arrows, etc.) should be measured.
+ *
+ * Default is narrow (width 1), per the Unicode recommendation for Western
+ * contexts and matching the vast majority of terminals. But some terminal
+ * emulators — notably several Android/mobile terminals and CJK-font setups
+ * inside tmux — render these glyphs as 2 cells. When Hermes measures 1 while
+ * the terminal draws 2, every line with such a glyph drifts by a cell, which
+ * desyncs Ink's layout from the screen (misaligned borders, overdrawn text).
+ *
+ * This is an explicit opt-in only (HERMES_TUI_AMBIGUOUS_WIDTH=wide). We do NOT
+ * auto-detect from the locale: ambiguous-as-wide affects ambiguous glyphs
+ * (which includes box-drawing) but NOT CJK letters themselves (already wide in
+ * both modes), so turning it on blindly for every CJK locale would break
+ * box-drawing on the majority of terminals that render it narrow. Users set it
+ * to match their terminal's own ambiguous-width setting.
+ */
+export function resolveAmbiguousAsWide(env: NodeJS.ProcessEnv = process.env): boolean {
+  return /^(?:wide|2|double)$/i.test((env['HERMES_TUI_AMBIGUOUS_WIDTH'] ?? '').trim())
+}
+
+// Resolved once at module load — the terminal's ambiguous-width behavior does
+// not change mid-session, and freezing it here keeps `widthCache` coherent
+// (the cache is created below and must never hold values from two different
+// flag states). Do not expose a runtime setter without also evicting the cache.
+const AMBIGUOUS_AS_WIDE = resolveAmbiguousAsWide()
+
+/**
  * Fallback JavaScript implementation of stringWidth when Bun.stringWidth is not available.
  *
  * Get the display width of a string as it would appear in a terminal.
@@ -16,11 +44,10 @@ const EMOJI_REGEX = emojiRegex()
  * This is a more accurate alternative to the string-width package that correctly handles
  * characters like ⚠ (U+26A0) which string-width incorrectly reports as width 2.
  *
- * The implementation uses eastAsianWidth directly with ambiguousAsWide: false,
- * which correctly treats ambiguous-width characters as narrow (width 1) as
- * recommended by the Unicode standard for Western contexts.
+ * Ambiguous-width characters follow `ambiguousAsWide` (defaults to the
+ * module-load flag; injectable for tests).
  */
-function stringWidthJavaScript(str: string): number {
+export function stringWidthJavaScript(str: string, ambiguousAsWide: boolean = AMBIGUOUS_AS_WIDE): number {
   if (typeof str !== 'string' || str.length === 0) {
     return 0
   }
@@ -71,7 +98,7 @@ function stringWidthJavaScript(str: string): number {
       const codePoint = char.codePointAt(0)!
 
       if (!isZeroWidth(codePoint)) {
-        width += eastAsianWidth(codePoint, { ambiguousAsWide: false })
+        width += eastAsianWidth(codePoint, { ambiguousAsWide })
       }
     }
 
@@ -97,7 +124,7 @@ function stringWidthJavaScript(str: string): number {
       const codePoint = char.codePointAt(0)!
 
       if (!isZeroWidth(codePoint)) {
-        width += eastAsianWidth(codePoint, { ambiguousAsWide: false })
+        width += eastAsianWidth(codePoint, { ambiguousAsWide })
 
         break
       }
@@ -270,7 +297,10 @@ function isZeroWidth(codePoint: number): boolean {
 // call — typeof guards deopt property access and this is a hot path (~100k calls/frame).
 const bunStringWidth = typeof Bun !== 'undefined' && typeof Bun.stringWidth === 'function' ? Bun.stringWidth : null
 
-const BUN_STRING_WIDTH_OPTS = { ambiguousIsNarrow: true } as const
+// Bun's option is the inverse spelling of the JS path's `ambiguousAsWide`.
+// Keep both driven by the single AMBIGUOUS_AS_WIDE flag so the Bun and Node
+// runtimes never disagree on a glyph's width (which would desync the cursor).
+const BUN_STRING_WIDTH_OPTS = { ambiguousIsNarrow: !AMBIGUOUS_AS_WIDE }
 
 const rawStringWidth: (str: string) => number = bunStringWidth
   ? str => bunStringWidth(str, BUN_STRING_WIDTH_OPTS)
