@@ -5547,6 +5547,28 @@ class HermesCLI(CLIAgentSetupMixin, CLICommandsMixin):
             # logged at DEBUG by the advisory module.
             pass
 
+    def _show_claude_reauth_warning(self):
+        """Show a startup warning when Claude token re-auth is needed.
+
+        ``agent/claude_reauth_signal.py`` drops a marker when a Claude
+        (Anthropic) OAuth token expired and auto-refresh failed. The classic
+        CLI has no live status-bar chip like the TUI, so surface the same
+        signal once at startup (to stderr, like the security banner) — the
+        user sees it on the next ``hermes`` launch instead of hitting silent
+        auth failures. Best-effort: never blocks startup.
+        """
+        try:
+            from agent.claude_reauth_signal import read_claude_reauth_signal
+            if read_claude_reauth_signal() is not None:
+                print(
+                    "\033[1;31m⚠ Claude 재로그인 필요\033[0m — Claude 토큰 갱신 실패. "
+                    "Claude Code에서 다시 로그인하거나 `claude setup-token`을 실행하세요.",
+                    file=sys.stderr,
+                    flush=True,
+                )
+        except Exception:
+            pass
+
     def show_banner(self):
         """Display the welcome banner in Claude Code style."""
         self.console.clear()
@@ -12180,6 +12202,7 @@ class HermesCLI(CLIAgentSetupMixin, CLICommandsMixin):
         # Surface any active supply-chain security advisories right after the
         # welcome banner. Quiet/single-query paths call this themselves.
         self._show_security_advisories()
+        self._show_claude_reauth_warning()
         # If resuming a session, load history and display it immediately
         # so the user has context before typing their first message.
         if self._resumed:
