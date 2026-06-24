@@ -1035,9 +1035,18 @@ def refresh_anthropic_oauth_pure(refresh_token: str, *, use_json: bool = False) 
 
 def _refresh_oauth_token(creds: Dict[str, Any]) -> Optional[str]:
     """Attempt to refresh an expired Claude Code OAuth token."""
+    # Surface "re-login needed" as a visible signal instead of swallowing it
+    # at debug level (Claude calls silently break when refresh fails). Pure
+    # side-effect — never changes the return value / control flow.
+    from agent.claude_reauth_signal import (
+        clear_claude_reauth_signal,
+        signal_claude_reauth_needed,
+    )
+
     refresh_token = creds.get("refreshToken", "")
     if not refresh_token:
         logger.debug("No refresh token available — cannot refresh")
+        signal_claude_reauth_needed("no_refresh_token")
         return None
 
     try:
@@ -1048,9 +1057,11 @@ def _refresh_oauth_token(creds: Dict[str, Any]) -> Optional[str]:
             refreshed["expires_at_ms"],
         )
         logger.debug("Successfully refreshed Claude Code OAuth token")
+        clear_claude_reauth_signal()
         return refreshed["access_token"]
     except Exception as e:
         logger.debug("Failed to refresh Claude Code token: %s", e)
+        signal_claude_reauth_needed("refresh_failed")
         return None
 
 
@@ -1127,6 +1138,9 @@ def _resolve_claude_code_token_from_credentials(creds: Optional[Dict[str, Any]] 
     creds = creds or read_claude_code_credentials()
     if creds and is_claude_code_token_valid(creds):
         logger.debug("Using Claude Code credentials (auto-detected)")
+        # Token is healthy again — drop any stale re-auth marker.
+        from agent.claude_reauth_signal import clear_claude_reauth_signal
+        clear_claude_reauth_signal()
         return creds["accessToken"]
     if creds:
         logger.debug("Claude Code credentials expired — attempting refresh")
