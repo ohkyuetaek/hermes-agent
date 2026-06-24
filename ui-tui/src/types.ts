@@ -169,6 +169,8 @@ export interface SessionInfo {
 export interface Usage {
   active_subagents?: number
   calls: number
+  // Claude 토큰 재인증 필요 신호(서버가 마커 존재 시에만 true). 상태줄 경고용.
+  claude_reauth_needed?: boolean
   compressions?: number
   context_max?: number
   context_percent?: number

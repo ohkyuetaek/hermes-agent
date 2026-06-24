@@ -7988,3 +7988,36 @@ def test_get_usage_safe_when_active_count_raises(monkeypatch):
     # Field omitted, but the rest of the payload is intact.
     assert "active_subagents" not in usage
     assert usage["model"] == "x"
+
+
+# ── _get_usage claude_reauth_needed (TUI status-bar ⚠ Claude 재로그인) ──────
+# When agent/claude_reauth_signal.py has left a marker (Claude token expired +
+# auto-refresh failed), _get_usage rides a `claude_reauth_needed: True` on the
+# existing usage payload so the Ink status bar shows a pinned re-auth warning.
+
+
+def test_get_usage_includes_claude_reauth_when_marker_present(monkeypatch):
+    import agent.claude_reauth_signal as sig
+    monkeypatch.setattr(sig, "read_claude_reauth_signal", lambda: {"reason": "refresh_failed"})
+    usage = server._get_usage(_BareAgent())
+    assert usage["claude_reauth_needed"] is True
+
+
+def test_get_usage_omits_claude_reauth_when_no_marker(monkeypatch):
+    import agent.claude_reauth_signal as sig
+    monkeypatch.setattr(sig, "read_claude_reauth_signal", lambda: None)
+    usage = server._get_usage(_BareAgent())
+    assert "claude_reauth_needed" not in usage
+
+
+def test_get_usage_safe_when_reauth_read_raises(monkeypatch):
+    """A raising read_claude_reauth_signal() must not break the usage payload."""
+    import agent.claude_reauth_signal as sig
+
+    def _boom():
+        raise RuntimeError("boom")
+
+    monkeypatch.setattr(sig, "read_claude_reauth_signal", _boom)
+    usage = server._get_usage(_BareAgent())
+    assert "claude_reauth_needed" not in usage
+    assert usage["model"] == "x"

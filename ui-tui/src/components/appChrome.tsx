@@ -466,8 +466,15 @@ export function StatusRule({
       ? noticeReserve
       : stringWidth(status)
 
+  // Claude 재인증 경고 — 토큰이 만료되고 자동 갱신이 실패했다는 신호. 인증이 깨진
+  // 상태이므로 폭 예산에서 최우선으로 자리를 확보하는 '고정' 칩으로 렌더한다(절대
+  // 드롭하지 않음). 짧게 유지해 model │ ctx 를 덜 압박한다.
+  const reauthNeeded = usage.claude_reauth_needed === true
+  const reauthText = reauthNeeded ? '⚠ Claude 재로그인' : ''
+
   const essentialWidth =
     stringWidth('─ ') +
+    (reauthText ? stringWidth(reauthText) + stringWidth(' ') : 0) +
     slotWidth +
     stringWidth(' │ ') +
     stringWidth(modelText) +
@@ -543,6 +550,13 @@ export function StatusRule({
             ellipsizes instead of crushing model │ ctx (R3-M7). */}
         <Box flexDirection="row" flexShrink={0}>
           <Text color={t.color.border}>{'─ '}</Text>
+          {reauthNeeded ? (
+            // truncate-end is for consistency with the other pinned Texts; the
+            // parent box is flexShrink={0} so this chip never actually truncates.
+            <Text color={t.color.error} wrap="truncate-end">
+              {reauthText}{' '}
+            </Text>
+          ) : null}
           {busy ? (
             <FaceTicker color={statusColor} startedAt={turnStartedAt} style={indicatorStyle} />
           ) : showNotice ? null : (

@@ -2714,6 +2714,19 @@ def _get_usage(agent) -> dict:
                 usage["dev_credits_spent_micros"] = int(spent)
         except Exception:
             pass
+
+    # Claude(Anthropic) 토큰 재인증 필요 신호. 만료+자동갱신 실패 시
+    # agent/claude_reauth_signal.py 가 마커를 남기므로, 존재할 때만 True를 실어
+    # TUI 상태줄이 "⚠ Claude 재로그인"을 표시하게 한다. (없으면 키 자체를 생략해
+    # 페이로드를 깨끗하게 유지 — dev_credits 패턴과 동일.)
+    try:
+        from agent.claude_reauth_signal import read_claude_reauth_signal
+
+        if read_claude_reauth_signal() is not None:
+            usage["claude_reauth_needed"] = True
+    except Exception:
+        pass
+
     return usage
 
 

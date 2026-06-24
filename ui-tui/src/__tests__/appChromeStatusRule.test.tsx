@@ -145,6 +145,41 @@ describe('StatusRule background-subagent indicator', () => {
   })
 })
 
+describe('StatusRule Claude re-auth warning', () => {
+  it('renders the warning chip when claude_reauth_needed is true', () => {
+    const element = StatusRule({
+      ...baseProps,
+      usage: { ...baseProps.usage, claude_reauth_needed: true }
+    })
+
+    expect(textContent(element)).toContain('⚠ Claude 재로그인')
+  })
+
+  it('omits the chip when the field is absent or false', () => {
+    expect(textContent(StatusRule({ ...baseProps }))).not.toContain('Claude 재로그인')
+    expect(
+      textContent(StatusRule({ ...baseProps, usage: { ...baseProps.usage, claude_reauth_needed: false } }))
+    ).not.toContain('Claude 재로그인')
+  })
+
+  it('is not width-gated: survives a narrow terminal where tail segments drop', () => {
+    // Contrast with the width-gated tail (e.g. ⛓ subagents, breakpoint 92):
+    // at cols=40 the tail segment is dropped, but the pinned auth chip remains
+    // in the tree. (textContent walks the React tree, so this proves the chip
+    // is NOT behind a fits()/width gate — not pixel-level visibility.) A broken
+    // credential must never be hidden just because the terminal is narrow.
+    const element = StatusRule({
+      ...baseProps,
+      cols: 40,
+      usage: { ...baseProps.usage, active_subagents: 2, claude_reauth_needed: true }
+    })
+
+    const text = textContent(element)
+    expect(text).toContain('⚠ Claude 재로그인') // pinned — present
+    expect(text).not.toContain('⛓') // width-gated tail — dropped at cols=40
+  })
+})
+
 describe('StatusRule session count click target', () => {
   it('makes the live session count itself clickable', () => {
     const openSwitcher = vi.fn()
